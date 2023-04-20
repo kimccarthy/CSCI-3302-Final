@@ -105,7 +105,15 @@ bounding_box_y = [0,135,135,0]
 # ------------------------------------------------------------------
 # Helper Functions
 
-#Color detection because I was bored
+#states/substates:
+#1. mapping
+#2. traverse
+    #a. move not in shelf
+    #b. right and left looking
+    #c. yellow found (turn to look)
+    #d. pick up 
+
+#Color detection
 def recalculating_img(img_test):
     img_new = np.zeros([MASK_HEIGHT,MASK_WIDTH,3])
     img_mask = np.zeros([MASK_HEIGHT, MASK_WIDTH])
@@ -124,32 +132,75 @@ def pixelYellow(r, g, b, yellow = yellow_range):
             if b>=yellow[0][2] and b<=yellow[1][2]:
                 return True
     return False
-"""
-def detectYellow(img):
-    img_mask = np.zeros([MASK_HEIGHT, MASK_WIDTH])
-    for x in range(MASK_HEIGHT):
-        for y in range(MASK_WIDTH):
-            pixel = img[x][y]
-            if pixelYellow(pixel[0], pixel[1], pixel[2]):
-                img_mask[x][y] = 1
-                
-    return img_mask
-"""
+    
+#remove once we have mapping    
 def print_img(img_mask, display):
     for i in range(MASK_HEIGHT):
         for j in range(MASK_WIDTH):
             if img_mask[i][j]==1:
                 display.drawPixel(j, i)
-
-def color_handler(display = display):
-    img_mask = recalculating_img(camera.getImage())
-    print_img(img_mask, display)
-
+      
 def clear_display(display = display):
     display.setColor(0x000000)
     display.fillRectangle(0,0,MASK_WIDTH, MASK_HEIGHT)
     display.setColor(0xFFFFFF)
+
+
+def expand_nr(img_mask, cur_coord, coordinates_in_blob):
+    #copy and pasted from McCarthy HW3
+    coordinates_in_blob = []
+    coordinate_list = [cur_coord]
+    height = img_mask.shape[0]
+    width = img_mask.shape[1]
+    while len(coordinate_list) > 0:
+        cur_coordinate = coordinate_list.pop()
+
+        if cur_coordinate[0]>=0 and cur_coordinate[0]<height and cur_coordinate[1]>=0 and cur_coordinate[1]<width:
+            if img_mask[cur_coordinate[0], cur_coordinate[1]] == 0:
+                continue
+            else:
+                coordinates_in_blob.append(cur_coordinate)
+            img_mask[cur_coordinate[0], cur_coordinate[1]] = 0
+            coordinate_list.append([cur_coordinate[0]-1, cur_coordinate[1]])
+            coordinate_list.append([cur_coordinate[0], cur_coordinate[1]-1])
+            coordinate_list.append([cur_coordinate[0]+1, cur_coordinate[1]])
+            coordinate_list.append([cur_coordinate[0], cur_coordinate[1]+1])
+        else:
+            continue
+    return coordinates_in_blob
     
+    
+def get_blobs(img_mask):
+    mask_copy = copy.copy(img_mask)
+    blobs_list = []  
+    for y in range(MASK_HEIGHT):
+        for x in range(MASK_WIDTH):
+            if(mask_copy[y,x]==1):
+                blob = expand_nr(mask_copy, [y,x], [])
+                if len(blob)>5:
+                    blobs_list.append(blob)
+    return blobs_list
+
+def get_blob_centroids(blobs_list):
+    object_positions_list = []
+    for blob in blobs_list:
+        sumy = 0
+        sumx = 0
+        for el in blob:
+            sumy = sumy+el[0]
+            sumx = sumx+el[1]
+        sumy = sumy/len(blob)
+        sumx = sumx/len(blob)
+        object_positions_list.append([sumy,sumx])
+    return object_positions_list  
+    
+def color_handler(display = display):
+    img_mask = recalculating_img(camera.getImage())
+    print_img(img_mask, display)
+    blobs = get_blobs(img_mask)
+    centroids = get_blob_centroids(blobs)
+    if(len(blobs)>0):
+        print(centroids)      
 gripper_status="closed"
 arm_status=0
 arm_statuses = [overhead, middle_shelf, top_shelf, basket]
