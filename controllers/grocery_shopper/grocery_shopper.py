@@ -21,7 +21,7 @@ N_PARTS = 12
 LIDAR_ANGLE_BINS = 667
 LIDAR_SENSOR_MAX_RANGE = 5.5 # Meters
 LIDAR_ANGLE_RANGE = math.radians(240)
-
+SCALE = 5
 # create the Robot instance.
 robot = Robot()
 #display = Display("camera")
@@ -102,6 +102,10 @@ MASK_HEIGHT = 135
 bounding_box_x = [0,0,240,240]
 bounding_box_y = [0,135,135,0]
 
+waypoints = [[0, 3],[3, 3]]
+display.setColor(0x00FF00)
+for w in waypoints:
+    display.drawPixel(w[0]*SCALE+130, w[1]*SCALE+130)
 # ------------------------------------------------------------------
 # Helper Functions
 
@@ -196,11 +200,13 @@ def get_blob_centroids(blobs_list):
     
 def color_handler(display = display):
     img_mask = recalculating_img(camera.getImage())
-    print_img(img_mask, display)
+    #print_img(img_mask, display)
     blobs = get_blobs(img_mask)
     centroids = get_blob_centroids(blobs)
-    if(len(blobs)>0):
-        print(centroids)      
+    #if(len(blobs)>0):
+    #    print(centroids) 
+
+dir_status = "left"     
 gripper_status="closed"
 arm_status=0
 arm_statuses = [overhead, middle_shelf, top_shelf, basket]
@@ -208,34 +214,77 @@ counter = 0
 #display = robot.getDevice('display');
 width = camera.getWidth()
 height = camera.getHeight()
-print(height,width)
-display.drawLine(0, height, width, height)
-display.drawLine(width, 0, width, height)
-    #
-# Main Loop
-#display.attachCamera(camera)
+
+
+
+#print(height,width)
+#display.drawLine(0, height, width, height)
+#display.drawLine(width, 0, width, height)
+
 count = 0
+curr = 0
+
+#~~~~~~START LOOP~~~~~~~~~~
 while robot.step(timestep) != -1:
     #
-    #odometry
     
-   # print(img_test_red)
-    #print(camera.getImageArray())
-    #detectYellow(camera.getImageArray())
-    #img = camera.getImageArray()
-    #print(img[130][128])
     
+ 
+    #color blob detection
     color_handler()
-    #print_img(data, display)
-    #print(display.height, display.width)
-    #display.imageNew(len(data), len(data[0]), data, Display.RGB)
     
+    #odometry
     distL = vL/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
     distR = vR/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
     pose_x += (distL+distR) / 2.0 * math.cos(pose_theta)
     pose_y += (distL+distR) / 2.0 * math.sin(pose_theta)
     pose_theta += (distR-distL)/AXLE_LENGTH
     
+    #move based on state
+    if(dir_status=="stopped"):
+        vL = 0
+        vR = 0
+    elif(dir_status=="drive"):
+        vL = MAX_SPEED/2
+        vR = MAX_SPEED/2
+    elif(dir_status=="left"):
+        vL = -MAX_SPEED/4
+        vR = MAX_SPEED/4
+    elif(dir_status=="right"):
+        vL = MAX_SPEED/4
+        vR = -MAX_SPEED/4
+    else:
+        vL = 0
+        vR = 0
+        print("INVALID STATE: STOPPING")
+    
+    
+    
+    ydist = waypoints[curr][1]-pose_y
+    xdist = waypoints[curr][0]-pose_x
+    theta = np.arctan2(ydist,xdist)
+    bear = None
+    if(theta>=0):
+        bear = theta-pose_theta
+    else:
+        bear = theta-pose_theta
+        
+    dist = np.sqrt(ydist**2 + xdist**2)
+    display.setColor(0xFF0000)
+    
+    
+    if(bear>0.05 or bear<-0.05):
+        if(theta>0):
+            dir_status = "left"
+        else:
+            dir_status = "right"
+    else:
+        print("Dwiving")
+        dir_status="drive"
+        
+    print(theta, bear, dist, pose_x, pose_y)
+    if(dist<0.005):
+        curr+=1
     #arm demonstration 
     counter = counter + 1
     for joint in range(len(arm_joint)):
@@ -247,8 +296,8 @@ while robot.step(timestep) != -1:
         arm_status = (arm_status + 1)%3
         counter = 0
             
-    robot_parts["wheel_left_joint"].setVelocity(0)
-    robot_parts["wheel_right_joint"].setVelocity(0)
+    robot_parts["wheel_left_joint"].setVelocity(vL)
+    robot_parts["wheel_right_joint"].setVelocity(vR)
     #print(right_gripper_enc.getValue(), left_gripper_enc.getValue(), gripper_status)
     
     if(gripper_status=="open"):
@@ -263,7 +312,9 @@ while robot.step(timestep) != -1:
         robot_parts["gripper_right_finger_joint"].setPosition(0.045)
         if left_gripper_enc.getValue()>=0.044:
             gripper_status="open"
-    count = (count + 1)%10
-    if count==0:
-        clear_display()
+    display.drawPixel(pose_x*SCALE+130, pose_y*SCALE+130)        
+    #only for blob map
+    #count = (count + 1)%10
+    #if count==0:
+    #    clear_display()
     
