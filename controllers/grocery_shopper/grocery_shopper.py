@@ -21,7 +21,8 @@ N_PARTS = 12
 LIDAR_ANGLE_BINS = 667
 LIDAR_SENSOR_MAX_RANGE = 5.5 # Meters
 LIDAR_ANGLE_RANGE = math.radians(240)
-SCALE = 5
+
+SCALE = 10
 # create the Robot instance.
 robot = Robot()
 #display = Display("camera")
@@ -88,6 +89,8 @@ lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
 map = None
+robot_parts["wheel_left_joint"].getPositionSensor().enable(timestep)
+robot_parts["wheel_right_joint"].getPositionSensor().enable(timestep)
 
 arm_joint = ["arm_1_joint", "arm_2_joint", "arm_3_joint", "arm_4_joint","arm_5_joint","arm_6_joint", "arm_7_joint"]
 middle_shelf = [1.6, -0.92, -3, 1.3, 1.32, 1.39, 0.5] 
@@ -102,7 +105,7 @@ MASK_HEIGHT = 135
 bounding_box_x = [0,0,240,240]
 bounding_box_y = [0,135,135,0]
 
-waypoints = [[0, 3],[3, 3]]
+waypoints = [[-1, 4.4],[4, 4]]
 display.setColor(0x00FF00)
 for w in waypoints:
     display.drawPixel(w[0]*SCALE+130, w[1]*SCALE+130)
@@ -117,7 +120,7 @@ for w in waypoints:
     #c. yellow found (turn to look)
     #d. pick up 
 
-#Color detection
+#~~~~COLOR DETECTION~~~~~
 def recalculating_img(img_test):
     img_new = np.zeros([MASK_HEIGHT,MASK_WIDTH,3])
     img_mask = np.zeros([MASK_HEIGHT, MASK_WIDTH])
@@ -209,7 +212,7 @@ def color_handler(display = display):
 dir_status = "left"     
 gripper_status="closed"
 arm_status=0
-arm_statuses = [overhead, middle_shelf, top_shelf, basket]
+arm_statuses = [overhead,top_shelf, basket]
 counter = 0
 #display = robot.getDevice('display');
 width = camera.getWidth()
@@ -223,79 +226,114 @@ height = camera.getHeight()
 
 count = 0
 curr = 0
-
+prev_positionL = 0
+prev_positionR = 0
+test_poseX = 0
+test_poseY = 0
 #~~~~~~START LOOP~~~~~~~~~~
+stop_count = 0
 while robot.step(timestep) != -1:
     #
     
     
  
     #color blob detection
-    color_handler()
+    #color_handler()
+    curr_positionL = robot_parts["wheel_left_joint"].getPositionSensor().getValue()
+    changeL = curr_positionL-prev_positionL
+    lin_velL = ((changeL)/(timestep/1000.0))
     
-    #odometry
-    distL = vL/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
-    distR = vR/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
+    curr_positionR = robot_parts["wheel_right_joint"].getPositionSensor().getValue()
+    changeR = curr_positionR-prev_positionR
+    lin_velR = ((changeR)/(timestep/1000.0))
+    
+    #try2L = lin_velL * timestep/1000.0
+    #try2R = lin_velR * timestep/1000.0
+    
+    #pose_x += (lin_velL+lin_velR)/2.0 * math.cos(pose_theta)
+    #pose_y += (lin_velL+lin_velR)/2.0 * math.sin(pose_theta)
+    #pose_theta += (lin_velR-lin_velL)/AXLE_LENGTH
+    
+    #print("VL", lin_velL, "VR", lin_velR, "PoseX/Y", pose_x, pose_y)
+    
+    
+    #currSpeedLeft = robot_parts["wheel_left_joint"].getVelocity()
+    #currSpeedRight = robot_parts["wheel_right_joint"].getVelocity()
+    distL = lin_velL/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
+    distR = lin_velR/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
     pose_x += (distL+distR) / 2.0 * math.cos(pose_theta)
     pose_y += (distL+distR) / 2.0 * math.sin(pose_theta)
     pose_theta += (distR-distL)/AXLE_LENGTH
+    pose_theta = pose_theta%(2*np.pi)
     
     #move based on state
-    if(dir_status=="stopped"):
+    if(dir_status=="stopped" and stop_count>0):
         vL = 0
         vR = 0
-    elif(dir_status=="drive"):
-        vL = MAX_SPEED/2
-        vR = MAX_SPEED/2
+        stop_count-=1
+        print(stop_count)
+    elif(dir_status=="stopped"):
+        dir_status = "drive"
+    elif(dir_status=="drive" and stop_count==0):
+        print("drive")
+        vL = MAX_SPEED/5
+        vR = MAX_SPEED/5
     elif(dir_status=="left"):
-        vL = -MAX_SPEED/4
-        vR = MAX_SPEED/4
+        vL = -MAX_SPEED/5
+        vR = MAX_SPEED/5
     elif(dir_status=="right"):
-        vL = MAX_SPEED/4
-        vR = -MAX_SPEED/4
+        vL = MAX_SPEED/5
+        vR = -MAX_SPEED/5
     else:
         vL = 0
         vR = 0
         print("INVALID STATE: STOPPING")
-    
-    
+        
+    prev_positionL = curr_positionL
+    prev_positionR = curr_positionR
     
     ydist = waypoints[curr][1]-pose_y
     xdist = waypoints[curr][0]-pose_x
     theta = np.arctan2(ydist,xdist)
     bear = None
     if(theta>=0):
-        bear = theta-pose_theta
+        bear = (theta-pose_theta)
     else:
         bear = theta-pose_theta
-        
+    bear = bear%(2*np.pi)   
     dist = np.sqrt(ydist**2 + xdist**2)
     display.setColor(0xFF0000)
     
-    
-    if(bear>0.05 or bear<-0.05):
-        if(theta>0):
+    print("THETA", theta-pose_theta)
+    if(((bear>0.05 and bear<6.23) or (bear<-0.05 and bear>-6.23)) and stop_count==0):
+        if((theta-pose_theta)>0):
             dir_status = "left"
         else:
             dir_status = "right"
     else:
-        print("Dwiving")
-        dir_status="drive"
+        if(dir_status =="drive" or stop_count>0):
+            print(".")
+        elif(dir_status=="stopped" and stop_count==0):
+            print("weet")
+        else:
+            dir_status = "stopped"
+            stop_count = 20
+        #print("Dwiving")
+        #dir_status="drive"
         
-    print(theta, bear, dist, pose_x, pose_y)
+    gV = robot_parts["wheel_left_joint"].getVelocity()
+    gV2 = robot_parts["wheel_right_joint"].getVelocity()
+    print("B:", bear, "D:", dist, "VL,Real", lin_velL, lin_velR, "POSEX/Y:", pose_x, pose_y)
     if(dist<0.005):
         curr+=1
     #arm demonstration 
     counter = counter + 1
-    for joint in range(len(arm_joint)):
-        robot_parts[arm_joint[joint]].setPosition(arm_statuses[arm_status][joint])
+    if(dir_status=="arm"):
+        for joint in range(len(arm_joint)):
+            robot_parts[arm_joint[joint]].setPosition(arm_statuses[arm_status][joint])
     #print(counter)
         #print(arm_statuses[arm_status][joint])
-    if(counter > 120):
-        print("Change")
-        arm_status = (arm_status + 1)%3
-        counter = 0
-            
+    print(vL, vR, gV, gV2)        
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
     #print(right_gripper_enc.getValue(), left_gripper_enc.getValue(), gripper_status)
