@@ -21,7 +21,7 @@ N_PARTS = 12
 LIDAR_ANGLE_BINS = 667
 LIDAR_SENSOR_MAX_RANGE = 5.5 # Meters
 LIDAR_ANGLE_RANGE = math.radians(240)
-
+BEAR_TOLERANCE = 0.3
 SCALE = 10
 # create the Robot instance.
 robot = Robot()
@@ -37,7 +37,7 @@ part_names = ("head_2_joint", "head_1_joint", "torso_lift_joint", "arm_1_joint",
               "gripper_left_finger_joint","gripper_right_finger_joint")
 
 # 
-
+TOLERANCE = 0.1
 # All motors except the wheels are controlled by position control. The wheels
 # are controlled by a velocity controller. We therefore set their position to infinite.
 target_pos = (0.0, 0.0, 0.35, 0.07, 1.02, -3.16, 1.27, 1.32, 0.0, 1.41, 'inf', 'inf',0.045,0.045)
@@ -105,7 +105,7 @@ MASK_HEIGHT = 135
 bounding_box_x = [0,0,240,240]
 bounding_box_y = [0,135,135,0]
 
-waypoints = [[-1, 4.4],[4, 4]]
+waypoints = [[0, 4.8],[4.8, 4.8]]
 display.setColor(0x00FF00)
 for w in waypoints:
     display.drawPixel(w[0]*SCALE+130, w[1]*SCALE+130)
@@ -218,7 +218,19 @@ counter = 0
 width = camera.getWidth()
 height = camera.getHeight()
 
-
+def angle_check(theta, pose_theta):
+    #I found that there was getting to be some confusion when the angle got near 0
+    pose_theta2 = 0
+    if(pose_theta>0): #if positive
+        pose_theta2 = pose_theta - 2*np.pi
+    else: #if negative
+        pose_theta2 = pose_theta + 2*np.pi
+    #print(np.abs(theta-pose_theta), np.abs(theta-pose_theta2))
+    if(np.abs(theta-pose_theta)<np.abs(theta-pose_theta2)):
+        return theta-pose_theta
+    #print("what", theta-pose_theta2)
+    return theta-pose_theta2
+        
 
 #print(height,width)
 #display.drawLine(0, height, width, height)
@@ -247,18 +259,6 @@ while robot.step(timestep) != -1:
     changeR = curr_positionR-prev_positionR
     lin_velR = ((changeR)/(timestep/1000.0))
     
-    #try2L = lin_velL * timestep/1000.0
-    #try2R = lin_velR * timestep/1000.0
-    
-    #pose_x += (lin_velL+lin_velR)/2.0 * math.cos(pose_theta)
-    #pose_y += (lin_velL+lin_velR)/2.0 * math.sin(pose_theta)
-    #pose_theta += (lin_velR-lin_velL)/AXLE_LENGTH
-    
-    #print("VL", lin_velL, "VR", lin_velR, "PoseX/Y", pose_x, pose_y)
-    
-    
-    #currSpeedLeft = robot_parts["wheel_left_joint"].getVelocity()
-    #currSpeedRight = robot_parts["wheel_right_joint"].getVelocity()
     distL = lin_velL/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
     distR = lin_velR/MAX_SPEED * MAX_SPEED_MS * timestep/1000.0
     pose_x += (distL+distR) / 2.0 * math.cos(pose_theta)
@@ -276,14 +276,14 @@ while robot.step(timestep) != -1:
         dir_status = "drive"
     elif(dir_status=="drive" and stop_count==0):
         print("drive")
-        vL = MAX_SPEED/5
-        vR = MAX_SPEED/5
+        vL = MAX_SPEED/4
+        vR = MAX_SPEED/4
     elif(dir_status=="left"):
-        vL = -MAX_SPEED/5
-        vR = MAX_SPEED/5
+        vL = -MAX_SPEED/8
+        vR = MAX_SPEED/8
     elif(dir_status=="right"):
-        vL = MAX_SPEED/5
-        vR = -MAX_SPEED/5
+        vL = MAX_SPEED/8
+        vR = -MAX_SPEED/8
     else:
         vL = 0
         vR = 0
@@ -295,18 +295,14 @@ while robot.step(timestep) != -1:
     ydist = waypoints[curr][1]-pose_y
     xdist = waypoints[curr][0]-pose_x
     theta = np.arctan2(ydist,xdist)
-    bear = None
-    if(theta>=0):
-        bear = (theta-pose_theta)
-    else:
-        bear = theta-pose_theta
-    bear = bear%(2*np.pi)   
+    print("THETAS", theta, pose_theta, theta-pose_theta, "DISTS", ydist, xdist)
+
+    bear = angle_check(theta, pose_theta) 
     dist = np.sqrt(ydist**2 + xdist**2)
     display.setColor(0xFF0000)
-    
-    print("THETA", theta-pose_theta)
-    if(((bear>0.05 and bear<6.23) or (bear<-0.05 and bear>-6.23)) and stop_count==0):
-        if((theta-pose_theta)>0):
+
+    if((bear>BEAR_TOLERANCE and bear<(2*np.pi - BEAR_TOLERANCE)) or (bear<-BEAR_TOLERANCE and bear>-(2*np.pi - BEAR_TOLERANCE)) and stop_count==0):
+        if(bear>0):
             dir_status = "left"
         else:
             dir_status = "right"
@@ -314,28 +310,38 @@ while robot.step(timestep) != -1:
         if(dir_status =="drive" or stop_count>0):
             print(".")
         elif(dir_status=="stopped" and stop_count==0):
-            print("weet")
+           print("weet")
         else:
             dir_status = "stopped"
             stop_count = 20
-        #print("Dwiving")
-        #dir_status="drive"
         
     gV = robot_parts["wheel_left_joint"].getVelocity()
     gV2 = robot_parts["wheel_right_joint"].getVelocity()
     print("B:", bear, "D:", dist, "VL,Real", lin_velL, lin_velR, "POSEX/Y:", pose_x, pose_y)
-    if(dist<0.005):
+    if(dist<0.1):
         curr+=1
-    #arm demonstration 
     counter = counter + 1
     if(dir_status=="arm"):
         for joint in range(len(arm_joint)):
             robot_parts[arm_joint[joint]].setPosition(arm_statuses[arm_status][joint])
     #print(counter)
         #print(arm_statuses[arm_status][joint])
-    print(vL, vR, gV, gV2)        
+    
+    if(vL==vR): #accounting for robot error, making it so that one wheel doesn't go insance
+        if(lin_velL<lin_velR - TOLERANCE):
+            #print("hewwo")
+            vR = lin_velL
+        elif(lin_velR<lin_velL - TOLERANCE):
+            vL = lin_velR
+            #print("hewwo2")
+    print(vL, vR, gV, gV2)
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
+    
+    #***CHECK ACCELERATION***
+    
+    
+    
     #print(right_gripper_enc.getValue(), left_gripper_enc.getValue(), gripper_status)
     
     if(gripper_status=="open"):
