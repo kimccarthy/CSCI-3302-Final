@@ -21,8 +21,9 @@ N_PARTS = 12
 LIDAR_ANGLE_BINS = 667
 LIDAR_SENSOR_MAX_RANGE = 5.5 # Meters
 LIDAR_ANGLE_RANGE = math.radians(240)
-BEAR_TOLERANCE = 0.3
+BEAR_TOLERANCE = 0.05
 SCALE = 10
+OFFSET = 180
 # create the Robot instance.
 robot = Robot()
 #display = Display("camera")
@@ -102,13 +103,14 @@ yellow_range = [[210, 210, 0], [255, 255, 30]] #RGB, might be an issue
 MASK_WIDTH = 240
 MASK_HEIGHT = 135
 
+robots_path = []
 bounding_box_x = [0,0,240,240]
 bounding_box_y = [0,135,135,0]
 
-waypoints = [[0, 4.8],[4.8, 4.8]]
+waypoints = [[0, 5.4],[8, 5.6], [16.5,5.8], [16.5, 2.5], [12, 2.2], [0, 2.0]]
 display.setColor(0x00FF00)
 for w in waypoints:
-    display.drawPixel(w[0]*SCALE+130, w[1]*SCALE+130)
+    display.drawPixel(w[0]*SCALE+OFFSET, w[1]*SCALE+OFFSET)
 # ------------------------------------------------------------------
 # Helper Functions
 
@@ -246,9 +248,44 @@ test_poseY = 0
 stop_count = 0
 while robot.step(timestep) != -1:
     #
+   
     
+    # Read Lidar           
+    lidar_sensor_readings = lidar.getRangeImage()
+    lidar_readings = []
     
- 
+    display.setColor(0xFF0000)
+    display.drawPixel(int(pose_x*SCALE)+OFFSET, int(pose_y*SCALE)+OFFSET)
+    print(int(pose_y*SCALE)+OFFSET, int(pose_x*SCALE)+OFFSET)
+    display.setColor(0x00FF00)   # Red points for robot path
+    display.drawPixel(int(pose_y*SCALE)*OFFSET, int(pose_x*SCALE)+OFFSET)
+    for i in range(83, LIDAR_ANGLE_BINS-83):
+        #print(len(lidar_offsets), len(lidar_sensor_readings))
+        if not(lidar_sensor_readings[i] == float('inf')):
+            # Converting lidar readings to robot coordinates
+            xr = np.sin(lidar_offsets[i-83]) * lidar_sensor_readings[i]
+            yr = np.cos(lidar_offsets[i-83]) * lidar_sensor_readings[i]
+            # Converting robot coordinates to world coordinates
+            xw = np.sin(pose_theta)*xr + np.cos(pose_theta)*yr + pose_x
+            yw = np.cos(pose_theta)*xr - np.sin(pose_theta)*yr + pose_y
+               
+            lidar_readings.append([xw, yw])
+    
+    ##### Part 4: Draw the obstacle and free space pixels on the map
+    robots_path.append([pose_x, pose_y])   # Keeping track of all points on robot path
+    
+    for ray in lidar_readings:
+        display.setColor(0xFFFFFF)   # White lines for empty space
+        display.drawLine(int(pose_x*SCALE)+OFFSET, int(pose_y*SCALE)+OFFSET, int(ray[0]*SCALE)+OFFSET, int(ray[1]*SCALE)+OFFSET)
+        #print("LIDAR", int(pose_y*SCALE)+OFFSET, int(pose_x*SCALE)+OFFSET, int(ray[1]*SCALE)+OFFSET, int(ray[0]*SCALE)+OFFSET)
+        display.setColor(0xFF0000)   # Red points for robot path
+        #display.drawPixel(int(pose_y*SCALE)*OFFSET, int(pose_x*SCALE)+OFFSET)
+        #display.setColor(0x0000FF)   # Blue points for obstacle edges
+        #display.drawPixel(int(ray[0]*SCALE)+OFFSET, int(ray[1]*SCALE)+OFFSET)
+    display.setColor(0xFF00FF) 
+    for point in robots_path:
+        display.drawPixel(pose_x, pose_y)
+   
     #color blob detection
     #color_handler()
     curr_positionL = robot_parts["wheel_left_joint"].getPositionSensor().getValue()
@@ -276,8 +313,8 @@ while robot.step(timestep) != -1:
         dir_status = "drive"
     elif(dir_status=="drive" and stop_count==0):
         print("drive")
-        vL = MAX_SPEED/4
-        vR = MAX_SPEED/4
+        vL = MAX_SPEED/2
+        vR = MAX_SPEED/2
     elif(dir_status=="left"):
         vL = -MAX_SPEED/8
         vR = MAX_SPEED/8
@@ -307,13 +344,7 @@ while robot.step(timestep) != -1:
         else:
             dir_status = "right"
     else:
-        if(dir_status =="drive" or stop_count>0):
-            print(".")
-        elif(dir_status=="stopped" and stop_count==0):
-           print("weet")
-        else:
-            dir_status = "stopped"
-            stop_count = 20
+        dir_status = "drive"
         
     gV = robot_parts["wheel_left_joint"].getVelocity()
     gV2 = robot_parts["wheel_right_joint"].getVelocity()
@@ -329,11 +360,9 @@ while robot.step(timestep) != -1:
     
     if(vL==vR): #accounting for robot error, making it so that one wheel doesn't go insance
         if(lin_velL<lin_velR - TOLERANCE):
-            #print("hewwo")
-            vR = lin_velL
+            vR = np.abs(lin_velL) + 0.1
         elif(lin_velR<lin_velL - TOLERANCE):
-            vL = lin_velR
-            #print("hewwo2")
+           vL = np.abs(lin_velR) + 0.1
     print(vL, vR, gV, gV2)
     robot_parts["wheel_left_joint"].setVelocity(vL)
     robot_parts["wheel_right_joint"].setVelocity(vR)
@@ -356,7 +385,7 @@ while robot.step(timestep) != -1:
         robot_parts["gripper_right_finger_joint"].setPosition(0.045)
         if left_gripper_enc.getValue()>=0.044:
             gripper_status="open"
-    display.drawPixel(pose_x*SCALE+130, pose_y*SCALE+130)        
+    #display.drawPixel(pose_x*SCALE+130, pose_y*SCALE+130)        
     #only for blob map
     #count = (count + 1)%10
     #if count==0:
