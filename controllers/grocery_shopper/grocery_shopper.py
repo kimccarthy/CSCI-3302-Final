@@ -107,30 +107,44 @@ pose_theta = 0
 vL = 0
 vR = 0
 
+#dir_status: direction status
+dir_status = "left"     
+gripper_status="closed"
+width = camera.getWidth()
+height = camera.getHeight()
 
 
 lidar_sensor_readings = [] # List to hold sensor readings
 lidar_offsets = np.linspace(-LIDAR_ANGLE_RANGE/2., +LIDAR_ANGLE_RANGE/2., LIDAR_ANGLE_BINS)
 lidar_offsets = lidar_offsets[83:len(lidar_offsets)-83] # Only keep lidar readings not blocked by robot chassis
 
+#map
 map = np.zeros(shape=[360,360])
+
+#for true linear velocity calculations
 robot_parts["wheel_left_joint"].getPositionSensor().enable(timestep)
 robot_parts["wheel_right_joint"].getPositionSensor().enable(timestep)
 
+#list of all arm joints
 arm_joint = ["arm_1_joint", "arm_2_joint", "arm_3_joint", "arm_4_joint","arm_5_joint","arm_6_joint", "arm_7_joint"]
-middle_shelf = [1.6, -0.92, -3, 1.3, 1.32, 1.39, 0.5] 
-top_shelf = [1.6, -0.18, -3.2, 1, -1.9, -1, 0]
-overhead = [2.68, 1.02, 0, -0.32, 0, 0, 0]
+
+
+#ARM POSITIONS FOR GRAB STATES
 basket = [1.6, 1.02, 0, 2.29, -2.07, 1.39, 2.07] 
 
+overhead = []
 #LOW: arm_grab_left = [2.68, -0.18, -1, -0.32, 2.07, 0.7, 2] 
 arm_grab_left_high = [2.68, 0.3, -1, -0.32, -2.07, 1.2, 2.07]
 arm_grab_left_low = [2.68, -0.4, -1, -0.32, -2.07, 1.2, 2.07] 
-arm_out = [1.3, -0.2, 0, -0.2, 0, 0, 0]
+arm_out = [1.3, -0.2, 0, -0.2, 0, 0, 0] #for consistency in how the arm moves before it grabs the block
 arms = [overhead, arm_grab_left_high, arm_grab_left_low, basket]
 
+#when to grab something
 get_state = "move"
+#timer for when to grab something
 state_counter = 0 
+counter = 0
+stop_count = 0
 
 yellow_range = [[210, 210, 0], [255, 255, 30]]
 MASK_WIDTH = 240
@@ -140,40 +154,38 @@ robots_path = []
 bounding_box_x = [0,0,240,240]
 bounding_box_y = [0,135,135,0]
 
-
 mode = 'amanual'
 
 #waypoints = [[0, 5.4],[8, 5.6], [16.5,5.8], [16.5, 2.5], [12, 2.2], [0, 2.0]]
 
-up_v_down = [-1, 1, 0, 1, 0, 1, 0] #go, turn, then grabbing each. 
-waypoints = [[0, 2.4], [1.1, 2.6], [2, 2.6], [7, 2.6]]
+#up_v_down: Is the block at this waypoint high or low? -1 = only a turn state
+up_v_down = [-1, 1, 0, 1, -1, 0, 1, 0] #go, turn, then grabbing each. 
+
+#******WAYPOINTS******
+waypoints = [[0, 2.4], [1.16, 2.63], [6.724, 3.05], [7.342, 3.07], [7.34, 1.8], [5.72,1.46], [2.6, 1.03],[2.52, 1.06], [0, 1.10]] 
 display.setColor(0x00FF00)
 for w in waypoints:
     display.drawPixel(w[0]*SCALE+OFFSET, w[1]*SCALE+OFFSET)
 # ------------------------------------------------------------------
 # Helper Functions
 
-#states/substates:
-#1. mapping
-#2. traverse
-    #a. move not in shelf
-    #b. right and left looking
-    #c. yellow found (turn to look)
-    #d. pick up 
-
 #~~~~COLOR DETECTION~~~~~
+
+#grabbing image from the camera
 def recalculating_img(img_test):
     img_new = np.zeros([MASK_HEIGHT,MASK_WIDTH,3])
     img_mask = np.zeros([MASK_HEIGHT, MASK_WIDTH])
     for i in range(MASK_HEIGHT):
         for j in range(MASK_WIDTH):
+            #for some reason standard image never worked, so had to grab individual colors
             img_new[i][j][0] = Camera.imageGetRed(img_test, MASK_WIDTH, j, i) 
             img_new[i][j][1] = Camera.imageGetGreen(img_test, MASK_WIDTH, j, i) 
             img_new[i][j][2] = Camera.imageGetBlue(img_test, MASK_WIDTH, j, i)
             if pixelYellow(img_new[i][j][0], img_new[i][j][1], img_new[i][j][2]):
                 img_mask[i][j] = 1 
     return img_mask
-       
+
+#is a pixel in the yellow range?        
 def pixelYellow(r, g, b, yellow = yellow_range):
     if r>=yellow[0][0] and r<=yellow[1][0]:
         if g>=yellow[0][1] and g<=yellow[1][1]:
@@ -181,19 +193,20 @@ def pixelYellow(r, g, b, yellow = yellow_range):
                 return True
     return False
     
-#remove once we have mapping    
+#display functionality   
 def print_img(img_mask, display):
     for i in range(MASK_HEIGHT):
         for j in range(MASK_WIDTH):
             if img_mask[i][j]==1:
                 display.drawPixel(j, i)
-      
+
+#reset display so not all blobs are overlayed at once      
 def clear_display(display = display):
     display.setColor(0x000000)
     display.fillRectangle(0,0,MASK_WIDTH, MASK_HEIGHT)
     display.setColor(0xFFFFFF)
 
-
+#expand nr from HW
 def expand_nr(img_mask, cur_coord, coordinates_in_blob):
     #copy and pasted from McCarthy HW3
     coordinates_in_blob = []
@@ -217,7 +230,7 @@ def expand_nr(img_mask, cur_coord, coordinates_in_blob):
             continue
     return coordinates_in_blob
     
-    
+#get all blobs from camera image    
 def get_blobs(img_mask):
     mask_copy = copy.copy(img_mask)
     blobs_list = []  
@@ -229,6 +242,7 @@ def get_blobs(img_mask):
                     blobs_list.append(blob)
     return blobs_list
 
+#calculating centroids (np.mean doesn't work well for my computer, so computed by hand)
 def get_blob_centroids(blobs_list):
     object_positions_list = []
     for blob in blobs_list:
@@ -242,6 +256,7 @@ def get_blob_centroids(blobs_list):
         object_positions_list.append([sumy,sumx])
     return object_positions_list  
     
+#Color handler, so there's just one quick and easy function to call to get blobs in the while loop 
 def color_handler(display = display):
     img_mask = recalculating_img(camera.getImage())
     #print_img(img_mask, display)
@@ -249,16 +264,13 @@ def color_handler(display = display):
     centroids = get_blob_centroids(blobs)
     #if(len(blobs)>0):
     #    print(centroids) 
+    
+#commented out lines are for display when display is not taken up by other things
 
-dir_status = "left"     
-gripper_status="closed"
-arm_status=0
-arm_statuses = [overhead,top_shelf, basket]
-counter = 0
-#display = robot.getDevice('display');
-width = camera.getWidth()
-height = camera.getHeight()
+#~~~~~~~~~END COLOR DETECTION~~~~~~~~~~~
 
+
+#Function arose because the angle between ~0 and ~-2pi was shown to be massive
 def angle_check(theta, pose_theta):
     #I found that there was getting to be some confusion when the angle got near 0
     pose_theta2 = 0
@@ -272,19 +284,25 @@ def angle_check(theta, pose_theta):
     #print("what", theta-pose_theta2)
     return theta-pose_theta2
         
-
+#for color blob detection so yo uonly need to look at a small subset of display
 #print(height,width)
 #display.drawLine(0, height, width, height)
 #display.drawLine(width, 0, width, height)
 
 count = 0
+
+#waypoint counter
 curr = 0
+
+#for velocity calculations
 prev_positionL = 0
 prev_positionR = 0
+
+
 test_poseX = 0
 test_poseY = 0
 #~~~~~~START LOOP~~~~~~~~~~
-stop_count = 0
+#stop_count = 0
 while robot.step(timestep) != -1:
     #pose_x = gps.getValues()[0]
     #pose_y = gps.getValues()[1]
@@ -575,8 +593,8 @@ while robot.step(timestep) != -1:
     elif get_state == "grab":
         vL = 0
         vR = 0
-        robot_parts["gripper_left_finger_joint"].setPosition(0.045)
-        robot_parts["gripper_right_finger_joint"].setPosition(0.045)
+        robot_parts["gripper_left_finger_joint"].setPosition(0)
+        robot_parts["gripper_right_finger_joint"].setPosition(0)
         state_counter = state_counter+1
         if state_counter>=STOP_NUMBER:
             get_state = "basket"
