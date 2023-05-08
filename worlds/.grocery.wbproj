@@ -9,5 +9,5 @@ orthographicViewHeight: 1
 textFiles: 0 "controllers/grocery_shopper/grocery_shopper.py"
 globalOptionalRendering: LightSensorRays
 consoles: Console:All:All
-renderingDevicePerspectives: TIAGo Steel:camera;1;1.0375;0;0.00167504
-renderingDevicePerspectives: TIAGo Steel:display;1;0.691667;0;0.149532
+renderingDevicePerspectives: TIAGo Steel:camera;0;1.0375;0;0.00167504
+renderingDevicePerspectives: TIAGo Steel:display;0;0.691667;0;0.149532
