@@ -276,13 +276,23 @@ def state_is_valid(state):
         return True
     return False
 
-def get_nearest_vertex(node_list, q_point):
- 
+def get_random_valid_vertex(state_is_valid):
+    vertex = None
+    while vertex is None: # Get starting vertex
+        pt = (random.randrange(360),random.randrange(360))
+        if state_is_valid(pt):
+            vertex = pt
+    return vertex
+    
+def state_is_valid(state):
+    if map[state[0]][state[1]]==0:
+        return True
+    return False
 
-    # TODO: Your Code Here
+def get_nearest_vertex(point_list, q_point):
     near_point = None
     near_dist =1000000 
-    for x in node_list:
+    for x in point_list:
         #if closer than near_point change to near point
         dist = np.sqrt((x.point[0]-q_point[0])**2 + (x.point[1]-q_point[1])**2)
         if dist < near_dist:
@@ -290,26 +300,20 @@ def get_nearest_vertex(node_list, q_point):
             near_point = x
 
     return near_point
-"""
+
 def steer(from_point, to_point, delta_q):
    
-    # TODO: Figure out if you can use "to_point" as-is, or if you need to move it so that it's only delta_q distance away
-
-    #find distance between to_point and from_point. If less than delta_q we good else it has to make more than one point
     point_dist = 0
     for x in range(len(from_point)):
         point_dist = point_dist + (to_point[x]-from_point[x])**2
     point_dist = np.sqrt(point_dist)
-
     if point_dist > delta_q:
         theta = np.arctan2(to_point[0] - from_point[0], to_point[1] - from_point [1])
         to_point[0] = from_point[0] +  delta_q * np.sin(theta)
         to_point[1] = from_point[1] + delta_q * np.cos(theta)
-    # TODO Use the np.linspace function to get 10 points along the path from "from_point" to "to_point"
-
-    path =np.linspace(from_point, to_point, 10)
+    path = np.linspace(from_point, to_point, 10)
     return path
-
+    
 def check_path_valid(path, state_is_valid):
   
     for x in path:
@@ -318,26 +322,22 @@ def check_path_valid(path, state_is_valid):
     
     return True
     
-
-def rrt(state_bounds, state_is_valid, starting_point, goal_point, k, delta_q):
+def rrt(state_is_valid, starting_point, goal_point, k, delta_q):
     
-    node_list = []
-    node_list.append(starting_point) # Add Node at starting point with no parent
-
-    # TODO: Your code here
-    # TODO: Make sure to add every node you create onto node_list, and to set node.parent and node.path_from_parent for each
-
+    point_list = []
+    point_list.append(starting_point) # Add Tuple at starting point
+    
     i = 0
     if goal_point is None:
         while i < k:
             i = i + 1
-            rand = get_random_valid_vertex(state_is_valid, state_bounds)
-            nearest_vert =get_nearest_vertex(node_list, rand)
+            rand = get_random_valid_vertex(state_is_valid)
+            nearest_vert =get_nearest_vertex(point_list, rand)
             path = steer(nearest_vert.point, rand, delta_q)
             if check_path_valid(path, state_is_valid):
-                new = Node(rand, parent=nearest_vert)
-                new.path_from_parent = path
-                node_list.append(new)
+                new = rand
+                new_path = path
+                point_list.append(new)
     else:
         goal_dist = np.sqrt((goal_point[0]-starting_point[0])**2+(goal_point[1]-starting_point[1])**2)
         while i < k:
@@ -346,19 +346,16 @@ def rrt(state_bounds, state_is_valid, starting_point, goal_point, k, delta_q):
             if random.random() < 0.05:
                 rand = goal_point
             rand_dist = np.sqrt((goal_point[0]-rand[0])**2+(goal_point[1]-rand[1])**2)
-            nearest_vert =get_nearest_vertex(node_list, rand)
+            nearest_vert =get_nearest_vertex(point_list, rand)
             path = steer(nearest_vert.point, rand, delta_q)
             if check_path_valid(path, state_is_valid):
                 #uncommenting this line only allows it to plot points that bring you closer to the goal
-                #if rand_dist < goal_dist:
+                if rand_dist < goal_dist:
                     goal_dist = rand_dist
-                    new = Node(rand, parent=nearest_vert)
-                    new.path_from_parent = path
-                    node_list.append(new) 
-
-
-    return node_list
-"""
+                    new = rand
+                    new_path = path
+                    point_list.append(new) 
+    return point_list
 
 #for color blob detection so yo uonly need to look at a small subset of display
 #print(height,width)
